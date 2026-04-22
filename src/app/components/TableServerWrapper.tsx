@@ -1,3 +1,4 @@
+"use server";
 import { ReactNode } from "react";
 import { neon } from "@neondatabase/serverless";
 
