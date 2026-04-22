@@ -11,13 +11,13 @@ import {
 
 export type Job = {
   id: number;
-  title: string;
+  role_name: string;
   status: string;
-  company: string;
+  company_name: string;
   industry: string;
-  salaryMin: string;
-  salaryMax: string;
-  datePosted: string;
+  salary_min: string;
+  salary_max: string;
+  date_posted: string;
   source: string;
 };
 
@@ -26,13 +26,13 @@ interface TableComponentProps {
 }
 
 const columns: ColumnDef<Job>[] = [
-  { accessorKey: "title", header: "Title" },
-  { accessorKey: "company", header: "Company" },
+  { accessorKey: "role_name", header: "Title" },
+  { accessorKey: "company_name", header: "Company" },
   { accessorKey: "status", header: "Status" },
   { accessorKey: "industry", header: "Industry" },
-  { accessorKey: "salaryMin", header: "Salary Min" },
-  { accessorKey: "salaryMax", header: "Salary Max" },
-  { accessorKey: "datePosted", header: "Date Posted" },
+  { accessorKey: "salary_min", header: "Salary Min" },
+  { accessorKey: "salary_max", header: "Salary Max" },
+  { accessorKey: "date_posted", header: "Date Posted" },
   { accessorKey: "source", header: "Source" },
 ];
 
