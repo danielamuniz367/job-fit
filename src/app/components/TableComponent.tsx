@@ -11,14 +11,14 @@ import {
 
 export type Job = {
   id: number;
-  role_name: string;
+  title: string;
   status: string;
-  company_name: string;
+  company: string;
   industry: string;
   salary_min: string;
   salary_max: string;
-  date_posted: string;
-  source: string;
+  posted_date: string;
+  source_link: string;
 };
 
 interface TableComponentProps {
@@ -26,14 +26,14 @@ interface TableComponentProps {
 }
 
 const columns: ColumnDef<Job>[] = [
-  { accessorKey: "role_name", header: "Title" },
-  { accessorKey: "company_name", header: "Company" },
+  { accessorKey: "title", header: "Title" },
+  { accessorKey: "company", header: "Company" },
   { accessorKey: "status", header: "Status" },
   { accessorKey: "industry", header: "Industry" },
   { accessorKey: "salary_min", header: "Salary Min" },
   { accessorKey: "salary_max", header: "Salary Max" },
-  { accessorKey: "date_posted", header: "Date Posted" },
-  { accessorKey: "source", header: "Source" },
+  { accessorKey: "posted_date", header: "Posted Date" },
+  { accessorKey: "source_link", header: "Source" },
 ];
 
 const TableComponent: React.FC<TableComponentProps> = ({ data }) => {

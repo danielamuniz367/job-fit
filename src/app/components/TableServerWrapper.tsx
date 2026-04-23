@@ -11,7 +11,7 @@ async function getData() {
     throw new Error("DATABASE_URL environment variable is not set");
   }
   const sql = neon(process.env.DATABASE_URL);
-  const response = await sql`SELECT * FROM job_listings`;
+  const response = await sql`SELECT * FROM job_listing`;
   return response;
 }
 

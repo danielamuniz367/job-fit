@@ -1,15 +1,5 @@
 import { NextResponse } from "next/server";
-import { getJson } from "serpapi";
-import { insertJobsToDb } from "./utils";
-
-function getJsonAsync(params: any): Promise<any> {
-  return new Promise((resolve, reject) => {
-    getJson(params, (json: any) => {
-      if (!json) reject(new Error("No data received from SerpAPI"));
-      else resolve(json);
-    });
-  });
-}
+import { fetchAndInsertJobs } from "./utils";
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get("Authorization");
@@ -19,19 +9,7 @@ export async function GET(req: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const json = await getJsonAsync({
-    api_key: process.env.SERPAPI_KEY,
-    engine: "google_jobs",
-    google_domain: "google.com",
-    q: "full stack engineer frontend",
-    hl: "en",
-    gl: "us",
-    location: "New York, New York, United States",
-    lrad: "5",
-  });
+  const inserted = await fetchAndInsertJobs(process.env.DATABASE_URL!);
 
-  const jobs = json.jobs_results ?? [];
-  await insertJobsToDb(jobs, process.env.DATABASE_URL!);
-
-  return NextResponse.json({ inserted: jobs.length, jobs });
+  return NextResponse.json({ inserted });
 }
