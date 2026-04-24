@@ -26,6 +26,11 @@ interface TableComponentProps {
 }
 
 const columns: ColumnDef<Job>[] = [
+  {
+    id: "rowNumber",
+    header: "#",
+    cell: (info) => info.row.index + 1,
+  },
   { accessorKey: "title", header: "Title" },
   { accessorKey: "company", header: "Company" },
   { accessorKey: "status", header: "Status" },

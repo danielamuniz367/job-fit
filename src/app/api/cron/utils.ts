@@ -11,21 +11,49 @@ function getJsonAsync(params: any): Promise<any> {
   });
 }
 
-export async function fetchAndInsertJobs(databaseUrl: string) {
-  const json = await getJsonAsync({
-    api_key: process.env.SERPAPI_KEY,
-    engine: "google_jobs",
-    google_domain: "google.com",
-    q: "full stack software react",
-    hl: "en",
-    gl: "us",
-    location: "New York, New York, United States",
-    lrad: "5",
-  });
+const SEARCH_PARAMS = {
+  engine: "google_jobs",
+  google_domain: "google.com",
+  q: "full stack software react",
+  hl: "en",
+  gl: "us",
+  location: "New York, New York, United States",
+  lrad: "5",
+} as const;
 
-  const jobs = json.jobs_results ?? [];
-  await insertJobsToDb(jobs, databaseUrl);
-  return jobs.length;
+export async function fetchAndInsertJobs(databaseUrl: string) {
+  let totalInserted = 0;
+  let nextPageToken: string | undefined = undefined;
+  let pagesFetched = 0;
+
+  do {
+    const params: Record<string, unknown> = {
+      ...SEARCH_PARAMS,
+      api_key: process.env.SERPAPI_KEY,
+    };
+    if (nextPageToken) {
+      params.next_page_token = nextPageToken;
+    }
+
+    const json = await getJsonAsync(params);
+    const jobs: any[] = json.jobs_results ?? [];
+
+    if (jobs.length === 0) break;
+
+    const insertedThisPage = await insertJobsToDb(jobs, databaseUrl);
+    pagesFetched++;
+
+    console.log(
+      `Page ${pagesFetched}: fetched ${jobs.length}, inserted ${insertedThisPage} new`,
+    );
+
+    if (insertedThisPage === 0) break;
+
+    totalInserted += insertedThisPage;
+    nextPageToken = json.serpapi_pagination?.next_page_token;
+  } while (nextPageToken);
+
+  return totalInserted;
 }
 
 const parseSalaryValue = (val: string): string =>
@@ -137,8 +165,12 @@ function parsePostedAt(postedAt?: string): string | null {
   return null;
 }
 
-export async function insertJobsToDb(jobs: any[], databaseUrl: string) {
+export async function insertJobsToDb(
+  jobs: any[],
+  databaseUrl: string,
+): Promise<number> {
   const sql = neon(databaseUrl);
+  let inserted = 0;
   for (const job of jobs) {
     const { salary_min, salary_max } = extractSalary(
       job.detected_extensions?.salary,
@@ -146,7 +178,7 @@ export async function insertJobsToDb(jobs: any[], databaseUrl: string) {
     );
     const industry = inferIndustry(job.description, job.company_name);
     const posted_date = parsePostedAt(job.detected_extensions?.posted_at);
-    await sql`
+    const result = await sql`
       INSERT INTO job_listing (
         job_id,
         title,
@@ -168,7 +200,10 @@ export async function insertJobsToDb(jobs: any[], databaseUrl: string) {
         ${salary_max},
         ${posted_date}
       )
-      ON CONFLICT (job_id) DO NOTHING;
+      ON CONFLICT DO NOTHING
+      RETURNING job_id;
     `;
+    inserted += result.length;
   }
+  return inserted;
 }
