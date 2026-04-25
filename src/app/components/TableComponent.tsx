@@ -53,7 +53,7 @@ const TableComponent: React.FC<TableComponentProps> = ({ data }) => {
   });
 
   return (
-    <table>
+    <table className="mx-auto">
       <thead>
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id}>
