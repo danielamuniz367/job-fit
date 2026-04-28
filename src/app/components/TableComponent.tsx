@@ -15,8 +15,6 @@ export type Job = {
   status: string;
   company: string;
   industry: string;
-  salary_min: string;
-  salary_max: string;
   posted_date: string;
   source_link: string;
 };
@@ -35,8 +33,6 @@ const columns: ColumnDef<Job>[] = [
   { accessorKey: "company", header: "Company" },
   { accessorKey: "status", header: "Status" },
   { accessorKey: "industry", header: "Industry" },
-  { accessorKey: "salary_min", header: "Salary Min" },
-  { accessorKey: "salary_max", header: "Salary Max" },
   { accessorKey: "posted_date", header: "Posted Date" },
   { accessorKey: "source_link", header: "Source" },
 ];
