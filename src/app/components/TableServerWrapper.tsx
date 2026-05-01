@@ -12,7 +12,11 @@ async function getData() {
   }
   const sql = neon(process.env.DATABASE_URL);
   const response = await sql`SELECT * FROM job_listing`;
-  return response;
+  const data = response.map((row: any) => ({
+    ...row,
+    posted_date: new Date(row.posted_date).toISOString().split("T")[0],
+  }));
+  return data;
 }
 
 const TableServerWrapper = async ({ children }: TableServerWrapperProps) => {
