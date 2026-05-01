@@ -1,39 +1,5 @@
 import { neon } from "@neondatabase/serverless";
 
-const parseSalaryValue = (val: string): string =>
-  val.replace(/[,]/g, "").toLowerCase().replace("k", "000");
-
-const SALARY_RANGE_REGEX =
-  /\$?(\d{2,3}[,\d]*)[kK]?\s*(?:-|–|to)\s*\$?(\d{2,3}[,\d]*)[kK]?/;
-const SALARY_SINGLE_REGEX = /\$?(\d{2,3}[,\d]*)[kK]?/;
-
-export function extractSalary(
-  salaryExtension?: string,
-  description?: string,
-): {
-  salary_min: string | null;
-  salary_max: string | null;
-} {
-  for (const source of [salaryExtension, description]) {
-    if (!source) continue;
-    const rangeMatch = source.match(SALARY_RANGE_REGEX);
-    if (rangeMatch) {
-      return {
-        salary_min: parseSalaryValue(rangeMatch[1]),
-        salary_max: parseSalaryValue(rangeMatch[2]),
-      };
-    }
-    if (source === salaryExtension) {
-      const singleMatch = source.match(SALARY_SINGLE_REGEX);
-      if (singleMatch) {
-        const val = parseSalaryValue(singleMatch[1]);
-        return { salary_min: val, salary_max: val };
-      }
-    }
-  }
-  return { salary_min: null, salary_max: null };
-}
-
 export function inferIndustry(
   description?: string,
   companyName?: string,
@@ -113,10 +79,6 @@ export async function insertJobsToDb(
   const sql = neon(databaseUrl);
   let inserted = 0;
   for (const job of jobs) {
-    const { salary_min, salary_max } = extractSalary(
-      job.detected_extensions?.salary,
-      job.description,
-    );
     const industry = inferIndustry(job.description, job.company_name);
     const posted_date = parsePostedAt(job.detected_extensions?.posted_at);
     const result = await sql`
@@ -127,8 +89,6 @@ export async function insertJobsToDb(
         status,
         company,
         industry,
-        salary_min,
-        salary_max,
         posted_date
       ) VALUES (
         ${job.job_id ?? null},
@@ -137,8 +97,6 @@ export async function insertJobsToDb(
         'Pending Application',
         ${job.company_name ?? null},
         ${industry},
-        ${salary_min},
-        ${salary_max},
         ${posted_date}
       )
       ON CONFLICT DO NOTHING

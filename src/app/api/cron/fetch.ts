@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { getJson } from "serpapi";
-import { extractSalary, inferIndustry } from "./db";
+import { inferIndustry } from "./db";
 
 function getJsonAsync(params: any): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -13,12 +13,16 @@ function getJsonAsync(params: any): Promise<any> {
 
 // ─── ATS Direct Search ───────────────────────────────────────────────────────
 // Targets company career pages directly via Greenhouse, Lever, and Ashby.
-// Each query = 1 API call; max 2 pages per query = 6 calls worst case per run.
+// 1 consolidated query × 2 pages = 2 calls max per run.
+
+const EXCLUDE_COMPANIES =
+  '-"google" -"facebook" -"amazon" -"ibm" -"oracle" -"salesforce" -"uber" -"vmware" -"intuit" -"palantir"';
+
+const EXCLUDE_SENIORITY =
+  '-"junior" -"jr." -"jr" -"senior" -"sr." -"sr" -"lead" -"staff" -"principal" -"director" -"manager" -"head of" -"vp" -"vice president"';
 
 const ATS_QUERIES = [
-  '(site:greenhouse.io OR site:lever.co OR site:ashbyhq.com) "full stack" "react" "new york"',
-  '(site:greenhouse.io OR site:lever.co OR site:ashbyhq.com) "software engineer" "typescript" "new york"',
-  '(site:greenhouse.io OR site:lever.co OR site:ashbyhq.com) "software engineer" "react" "remote"',
+  `(site:greenhouse.io OR site:lever.co OR site:ashbyhq.com) ("full stack" OR "software engineer") ("react" OR "typescript") "new york" ${EXCLUDE_SENIORITY} ${EXCLUDE_COMPANIES}`,
 ] as const;
 
 const ATS_HOSTS = ["greenhouse.io", "lever.co", "ashbyhq.com"];
@@ -76,7 +80,6 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
         const title: string = result.title ?? "";
         const snippet: string = result.snippet ?? "";
         const company = extractCompanyFromAtsUrl(link);
-        const { salary_min, salary_max } = extractSalary(undefined, snippet);
         const industry = inferIndustry(snippet, company);
 
         const inserted = await sql`
@@ -87,8 +90,6 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
             status,
             company,
             industry,
-            salary_min,
-            salary_max,
             posted_date
           ) VALUES (
             ${link},
@@ -97,8 +98,6 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
             'Pending Application',
             ${company || null},
             ${industry},
-            ${salary_min},
-            ${salary_max},
             ${new Date().toISOString().split("T")[0]}
           )
           ON CONFLICT DO NOTHING
