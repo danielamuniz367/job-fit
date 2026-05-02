@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchAndInsertJobs } from "./utils";
+import { enrichJobs } from "./enrich";
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get("Authorization");
@@ -14,6 +15,7 @@ export async function GET(req: Request) {
   }
 
   const inserted = await fetchAndInsertJobs(db);
+  const { kept, skipped, failed } = await enrichJobs(db);
 
-  return NextResponse.json({ inserted });
+  return NextResponse.json({ inserted, kept, skipped, failed });
 }
