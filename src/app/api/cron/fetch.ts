@@ -53,6 +53,7 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
   for (const query of ATS_QUERIES) {
     let start = 0;
     let pagesFetched = 0;
+    let results: any[] = [];
 
     do {
       const params: Record<string, unknown> = {
@@ -62,11 +63,12 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
         gl: "us",
         hl: "en",
         num: 10,
+        tbs: "qdr:w", // past week only — avoids stale cached results
         start,
       };
 
       const json = await getJsonAsync(params);
-      const results: any[] = json.organic_results ?? [];
+      results = json.organic_results ?? [];
 
       if (results.length === 0) break;
 
@@ -114,10 +116,8 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
         `ATS query "${query.slice(0, 60)}..." | Page ${pagesFetched}: fetched ${results.length}, inserted ${insertedThisPage} new`,
       );
 
-      if (insertedThisPage === 0) break;
-
       start += 10;
-    } while (start < 20); // max 2 pages per query
+    } while (results.length === 10 && start < 20); // max 2 pages per query
   }
 
   return totalInserted;

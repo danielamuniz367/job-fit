@@ -4,25 +4,76 @@ import { neon } from "@neondatabase/serverless";
 const NYC_PATTERN = /(new york(,\s*ny)?|new york city|nyc|\bny\b)/i;
 const REACT_PATTERN = /\b(react|js|ts|javascript|typescript)\b/i;
 
-const SELECTORS = [
-  ".job-post-container", // Greenhouse
-  ".content", // Lever
-  "#content", // Greenhouse fallback
-  ".posting-description", // Lever fallback
-  "#root", // Ashby
-];
+const LEVER_SELECTORS = [".content", ".posting-description"];
 
-function extractDescription($: cheerio.CheerioAPI): string {
-  for (const selector of SELECTORS) {
+function extractLeverDescription($: cheerio.CheerioAPI): string {
+  for (const selector of LEVER_SELECTORS) {
     const text = $(selector).first().text().trim();
     if (text.length > 100) return text;
   }
-  return "";
+  return $("body").text().trim();
 }
 
 // Strip known ATS trailing slugs (e.g. /application, /apply) before fetching
 function normalizeJobUrl(url: string): string {
   return url.replace(/\/(application|apply|submit)(\/.*)?$/i, "");
+}
+
+// Ashby and Greenhouse use client-side rendering, so raw fetch() returns an
+// empty JS shell. Use each ATS's public JSON API to get structured job data.
+async function fetchJobText(rawUrl: string): Promise<string> {
+  const url = normalizeJobUrl(rawUrl);
+  const parsed = new URL(url);
+
+  // Ashby: https://jobs.ashbyhq.com/<orgSlug>/<jobId>
+  if (parsed.hostname === "jobs.ashbyhq.com") {
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      const jobId = parts[1];
+      const res = await fetch(
+        `https://api.ashbyhq.com/posting-api/job-posting/${jobId}`,
+      );
+      if (!res.ok) throw new Error(`Ashby API ${res.status} for ${jobId}`);
+      const data = await res.json();
+      const location: string = data.locationName ?? "";
+      let description: string;
+      if (data.descriptionPlain) {
+        description = data.descriptionPlain;
+      } else if (data.descriptionHtml) {
+        const $ = cheerio.load(data.descriptionHtml);
+        description = $.text().trim();
+      } else {
+        description = "";
+      }
+      return `${location} ${description}`;
+    }
+  }
+
+  // Greenhouse (job-boards.greenhouse.io, job-boards.eu.greenhouse.io, boards.greenhouse.io)
+  // newer board URLs are client-side rendered — use the boards API
+  if (parsed.hostname.includes("greenhouse.io")) {
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    const jobsIdx = parts.indexOf("jobs");
+    if (jobsIdx >= 1 && parts.length > jobsIdx) {
+      const company = parts[jobsIdx - 1];
+      const jobId = (parts[jobsIdx + 1] ?? "").split("?")[0];
+      const res = await fetch(
+        `https://boards-api.greenhouse.io/v1/boards/${company}/jobs/${jobId}`,
+      );
+      if (!res.ok)
+        throw new Error(`Greenhouse API ${res.status} for ${company}/${jobId}`);
+      const data = await res.json();
+      const location: string = data.location?.name ?? "";
+      const $ = cheerio.load(data.content ?? "");
+      const description = $.text().trim();
+      return `${location} ${description}`;
+    }
+  }
+
+  // Lever renders server-side — HTML scraping works
+  const html = await fetch(url).then((r) => r.text());
+  const $ = cheerio.load(html);
+  return extractLeverDescription($);
 }
 
 export async function enrichJobs(databaseUrl: string) {
@@ -38,10 +89,7 @@ export async function enrichJobs(databaseUrl: string) {
 
   for (const job of jobs) {
     try {
-      const url = normalizeJobUrl(job.job_id);
-      const html = await fetch(url).then((r) => r.text());
-      const $ = cheerio.load(html);
-      const description = extractDescription($);
+      const description = await fetchJobText(job.job_id);
 
       const hasNyc = NYC_PATTERN.test(description);
       const hasReact = REACT_PATTERN.test(description);
