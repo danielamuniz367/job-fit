@@ -6,6 +6,7 @@ function getJsonAsync(params: any): Promise<any> {
   return new Promise((resolve, reject) => {
     getJson(params, (json: any) => {
       if (!json) reject(new Error("No data received from SerpAPI"));
+      else if (json.error) reject(new Error(`SerpAPI error: ${json.error}`));
       else resolve(json);
     });
   });

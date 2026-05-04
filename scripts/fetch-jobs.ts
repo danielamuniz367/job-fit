@@ -35,9 +35,13 @@ if (databaseTarget === "prod" && !hasProdConfirmation) {
 }
 
 const databaseUrl = process.env.DATABASE_URL;
-
 if (!databaseUrl) {
   throw new Error(`DATABASE_URL is not set in ${ENV_FILES[databaseTarget]}`);
+}
+
+const serpApiKey = process.env.SERPAPI_KEY;
+if (!serpApiKey) {
+  throw new Error(`SERPAPI_KEY is not set in ${ENV_FILES[databaseTarget]}`);
 }
 
 (async () => {

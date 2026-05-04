@@ -1,8 +1,8 @@
 import * as cheerio from "cheerio";
 import { neon } from "@neondatabase/serverless";
 
-const NYC_PATTERN = /\b(new york|new york city|nyc|ny,|, ny)\b/i;
-const REACT_PATTERN = /\breact\b/i;
+const NYC_PATTERN = /(new york(,\s*ny)?|new york city|nyc|\bny\b)/i;
+const REACT_PATTERN = /\b(react|js|ts|javascript|typescript)\b/i;
 
 const SELECTORS = [
   ".job-post-container", // Greenhouse
