@@ -63,7 +63,7 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
         gl: "us",
         hl: "en",
         num: 10,
-        tbs: "qdr:w", // past week only — avoids stale cached results
+        tbs: "qdr:m", // past month — qdr:w was too restrictive with this query
         start,
       };
 
