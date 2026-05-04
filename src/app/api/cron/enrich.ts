@@ -19,34 +19,40 @@ function normalizeJobUrl(url: string): string {
   return url.replace(/\/(application|apply|submit)(\/.*)?$/i, "");
 }
 
-// Ashby and Greenhouse use client-side rendering, so raw fetch() returns an
-// empty JS shell. Use each ATS's public JSON API to get structured job data.
+// Greenhouse uses client-side rendering, so raw fetch() returns an empty JS
+// shell. Use the Greenhouse boards API to get structured job data instead.
+// Ashby embeds job data in a JSON-LD <script> tag — parse that directly.
 async function fetchJobText(rawUrl: string): Promise<string> {
   const url = normalizeJobUrl(rawUrl);
   const parsed = new URL(url);
 
-  // Ashby: https://jobs.ashbyhq.com/<orgSlug>/<jobId>
+  // Ashby: parse JSON-LD structured data embedded in the HTML
   if (parsed.hostname === "jobs.ashbyhq.com") {
-    const parts = parsed.pathname.split("/").filter(Boolean);
-    if (parts.length >= 2) {
-      const jobId = parts[1];
-      const res = await fetch(
-        `https://api.ashbyhq.com/posting-api/job-posting/${jobId}`,
-      );
-      if (!res.ok) throw new Error(`Ashby API ${res.status} for ${jobId}`);
-      const data = await res.json();
-      const location: string = data.locationName ?? "";
-      let description: string;
-      if (data.descriptionPlain) {
-        description = data.descriptionPlain;
-      } else if (data.descriptionHtml) {
-        const $ = cheerio.load(data.descriptionHtml);
-        description = $.text().trim();
-      } else {
-        description = "";
-      }
+    const html = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      },
+    }).then((r) => r.text());
+    const $ = cheerio.load(html);
+    const jsonLd = $("script[type='application/ld+json']").text();
+    if (jsonLd) {
+      const data = JSON.parse(jsonLd);
+      // jobLocation can be a single object or an array of locations
+      const locations = Array.isArray(data.jobLocation)
+        ? data.jobLocation
+        : [data.jobLocation].filter(Boolean);
+      const location = locations
+        .map(
+          (l: any) =>
+            l?.address?.addressLocality ?? l?.address?.addressRegion ?? "",
+        )
+        .join(" ");
+      const $desc = cheerio.load(data.description ?? "");
+      const description = $desc.text().trim();
       return `${location} ${description}`;
     }
+    return "";
   }
 
   // Greenhouse (job-boards.greenhouse.io, job-boards.eu.greenhouse.io, boards.greenhouse.io)
