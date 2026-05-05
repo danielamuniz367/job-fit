@@ -10,6 +10,7 @@ import {
   Header,
   Cell,
 } from "@tanstack/react-table";
+import JobPanel from "./JobPanel";
 
 export type Job = {
   id: number;
@@ -88,6 +89,7 @@ const CellElement: React.FC<{
         target="_blank"
         rel="noopener noreferrer"
         className="text-blue-600 hover:underline"
+        onClick={(e) => e.stopPropagation()}
       >
         {String(cell.getValue())}
       </a>
@@ -100,6 +102,7 @@ const TableComponent: React.FC<TableComponentProps> = ({ data }) => {
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: "posted_date", desc: true },
   ]);
+  const [selectedJob, setSelectedJob] = React.useState<Job | null>(null);
   const table = useReactTable({
     data,
     columns,
@@ -110,35 +113,42 @@ const TableComponent: React.FC<TableComponentProps> = ({ data }) => {
   });
 
   return (
-    <table className="mx-auto">
-      <thead>
-        {table.getHeaderGroups().map((headerGroup) => (
-          <tr key={headerGroup.id}>
-            {headerGroup.headers.map((header) => (
-              <th key={header.id}>
-                <HeaderElement header={header}>
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </HeaderElement>
-              </th>
-            ))}
-          </tr>
-        ))}
-      </thead>
-      <tbody>
-        {table.getRowModel().rows.map((row) => (
-          <tr key={row.id}>
-            {row.getVisibleCells().map((cell) => (
-              <td key={cell.id}>
-                <CellElement cell={cell} />
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <>
+      <table className="mx-auto">
+        <thead>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <tr key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <th key={header.id}>
+                  <HeaderElement header={header}>
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )}
+                  </HeaderElement>
+                </th>
+              ))}
+            </tr>
+          ))}
+        </thead>
+        <tbody>
+          {table.getRowModel().rows.map((row) => (
+            <tr
+              key={row.id}
+              className="cursor-pointer hover:bg-gray-50"
+              onClick={() => setSelectedJob(row.original)}
+            >
+              {row.getVisibleCells().map((cell) => (
+                <td key={cell.id}>
+                  <CellElement cell={cell} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <JobPanel job={selectedJob} onClose={() => setSelectedJob(null)} />
+    </>
   );
 };
 
