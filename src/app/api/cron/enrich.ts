@@ -2,7 +2,9 @@ import * as cheerio from "cheerio";
 import { neon } from "@neondatabase/serverless";
 
 const NYC_PATTERN = /(new york(,\s*ny)?|new york city|nyc|\bny\b)/i;
-const REACT_PATTERN = /\b(react|js|ts|javascript|typescript)\b/i;
+const STACK_PATTERN = /\b(react|js|ts|javascript|typescript)\b/i;
+
+class JobNotFoundError extends Error {}
 
 const LEVER_SELECTORS = [".content", ".posting-description"];
 
@@ -28,14 +30,19 @@ async function fetchJobText(rawUrl: string): Promise<string> {
 
   // Ashby: parse JSON-LD structured data embedded in the HTML
   if (parsed.hostname === "jobs.ashbyhq.com") {
-    const html = await fetch(url, {
+    const res = await fetch(url, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       },
-    }).then((r) => r.text());
+    });
+    if (res.status === 404)
+      throw new JobNotFoundError(`Ashby job not found: ${url}`);
+    const html = await res.text();
     const $ = cheerio.load(html);
-    const jsonLd = $("script[type='application/ld+json']").text();
+    const jsonLd =
+      $('script[type="application/ld+json"]').text() ||
+      $("script[type='application/ld+json']").text();
     if (jsonLd) {
       const data = JSON.parse(jsonLd);
       // jobLocation can be a single object or an array of locations
@@ -49,7 +56,11 @@ async function fetchJobText(rawUrl: string): Promise<string> {
         )
         .join(" ");
       const $desc = cheerio.load(data.description ?? "");
-      const description = $desc.text().trim();
+      // Insert spaces between elements to prevent keywords merging (e.g. "ReactTypeScript")
+      $desc("*").each((_, el) => {
+        if (el.type === "tag") $desc(el).after(" ");
+      });
+      const description = $desc("body").text().replace(/\s+/g, " ").trim();
       return `${location} ${description}`;
     }
     return "";
@@ -67,7 +78,11 @@ async function fetchJobText(rawUrl: string): Promise<string> {
         `https://boards-api.greenhouse.io/v1/boards/${company}/jobs/${jobId}`,
       );
       if (!res.ok)
-        throw new Error(`Greenhouse API ${res.status} for ${company}/${jobId}`);
+        throw res.status === 404
+          ? new JobNotFoundError(
+              `Greenhouse job not found: ${company}/${jobId}`,
+            )
+          : new Error(`Greenhouse API ${res.status} for ${company}/${jobId}`);
       const data = await res.json();
       const location: string = data.location?.name ?? "";
       const $ = cheerio.load(data.content ?? "");
@@ -77,7 +92,10 @@ async function fetchJobText(rawUrl: string): Promise<string> {
   }
 
   // Lever renders server-side — HTML scraping works
-  const html = await fetch(url).then((r) => r.text());
+  const leverRes = await fetch(url);
+  if (leverRes.status === 404)
+    throw new JobNotFoundError(`Lever job not found: ${url}`);
+  const html = await leverRes.text();
   const $ = cheerio.load(html);
   return extractLeverDescription($);
 }
@@ -98,9 +116,9 @@ export async function enrichJobs(databaseUrl: string) {
       const description = await fetchJobText(job.job_id);
 
       const hasNyc = NYC_PATTERN.test(description);
-      const hasReact = REACT_PATTERN.test(description);
+      const hasStack = STACK_PATTERN.test(description);
 
-      if (hasNyc && hasReact) {
+      if (hasNyc && hasStack) {
         await sql`
           UPDATE job_listing
           SET enriched = true, description = ${description}
@@ -111,15 +129,20 @@ export async function enrichJobs(databaseUrl: string) {
       } else {
         skipped++;
         console.log(
-          `⚠ skipped (nyc=${hasNyc}, react=${hasReact}): ${job.job_id}`,
+          `⚠ skipped (nyc=${hasNyc}, stack=${hasStack}): ${job.job_id}`,
         );
       }
 
       // polite delay between requests
       await new Promise((r) => setTimeout(r, 1000));
     } catch (err) {
-      failed++;
-      console.error(`✗ failed to enrich ${job.job_id}:`, err);
+      if (err instanceof JobNotFoundError) {
+        await sql`DELETE FROM job_listing WHERE job_id = ${job.job_id}`;
+        console.log(`✗ removed (not found): ${job.job_id}`);
+      } else {
+        failed++;
+        console.error(`✗ failed to enrich ${job.job_id}:`, err);
+      }
     }
   }
 

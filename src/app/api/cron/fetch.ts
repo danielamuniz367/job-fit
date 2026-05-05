@@ -23,7 +23,7 @@ const EXCLUDE_SENIORITY =
   '-"junior" -"jr." -"jr" -"senior" -"sr." -"sr" -"lead" -"staff" -"principal" -"director" -"manager" -"head of" -"vp" -"vice president"';
 
 const ATS_QUERIES = [
-  `(site:greenhouse.io OR site:lever.co OR site:ashbyhq.com) ("full stack" OR "software engineer") ("react" OR "typescript") "new york" ${EXCLUDE_SENIORITY} ${EXCLUDE_COMPANIES}`,
+  `site:greenhouse.io OR site:lever.co OR site:ashbyhq.com ("software engineer" OR "full stack") (react OR typescript) "new york" ${EXCLUDE_SENIORITY} ${EXCLUDE_COMPANIES}`,
 ] as const;
 
 const ATS_HOSTS = ["greenhouse.io", "lever.co", "ashbyhq.com"];
@@ -63,7 +63,6 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
         gl: "us",
         hl: "en",
         num: 10,
-        tbs: "qdr:m", // past month — qdr:w was too restrictive with this query
         start,
       };
 
@@ -117,7 +116,7 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
       );
 
       start += 10;
-    } while (results.length === 10 && start < 20); // max 2 pages per query
+    } while (results.length === 10 && start < 30); // max 3 pages per query
   }
 
   return totalInserted;
