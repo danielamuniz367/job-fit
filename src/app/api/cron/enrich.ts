@@ -175,6 +175,14 @@ async function verifyEnrichedJobsWithAI(
 export async function enrichJobs(databaseUrl: string, jobIds?: string[]) {
   const sql = neon(databaseUrl);
 
+  // When called from the cron with an explicit (possibly empty) list,
+  // only process those IDs. An empty list means nothing was inserted — skip.
+  // When called from the CLI (no jobIds), process all unenriched rows.
+  if (jobIds !== undefined && jobIds.length === 0) {
+    console.log("No new jobs to enrich.");
+    return { kept: 0, skipped: 0, failed: 0, aiRemoved: 0 };
+  }
+
   const jobs = (
     jobIds && jobIds.length > 0
       ? await sql`SELECT job_id FROM job_listing WHERE job_id = ANY(${jobIds}) AND enriched = false`
@@ -209,8 +217,8 @@ export async function enrichJobs(databaseUrl: string, jobIds?: string[]) {
         );
       }
 
-      // polite delay between requests
-      await new Promise((r) => setTimeout(r, 1000));
+      // polite delay — only needed for CLI runs to avoid rate-limiting
+      if (!jobIds) await new Promise((r) => setTimeout(r, 1000));
     } catch (err) {
       if (err instanceof JobNotFoundError) {
         await sql`DELETE FROM job_listing WHERE job_id = ${job.job_id}`;
