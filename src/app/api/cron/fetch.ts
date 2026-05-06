@@ -48,7 +48,7 @@ function extractCompanyFromAtsUrl(url: string): string {
 export async function fetchAndInsertAtsJobs(databaseUrl: string) {
   const sql = neon(databaseUrl);
   const seenLinks = new Set<string>();
-  let totalInserted = 0;
+  const insertedIds: string[] = [];
 
   for (const query of ATS_QUERIES) {
     let start = 0;
@@ -71,7 +71,7 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
 
       if (results.length === 0) break;
 
-      let insertedThisPage = 0;
+      const countBefore = insertedIds.length;
 
       for (const result of results) {
         const link: string = result.link ?? "";
@@ -105,11 +105,13 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
           ON CONFLICT DO NOTHING
           RETURNING job_id;
         `;
-        insertedThisPage += inserted.length;
+        if (inserted.length > 0) {
+          insertedIds.push(link);
+        }
       }
 
       pagesFetched++;
-      totalInserted += insertedThisPage;
+      const insertedThisPage = insertedIds.length - countBefore;
 
       console.log(
         `ATS query "${query.slice(0, 60)}..." | Page ${pagesFetched}: fetched ${results.length}, inserted ${insertedThisPage} new`,
@@ -119,13 +121,13 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
     } while (results.length === 10 && start < 30); // max 3 pages per query
   }
 
-  return totalInserted;
+  return insertedIds;
 }
 
 // ─── Main entry point ────────────────────────────────────────────────────────
 
 export async function fetchAndInsertJobs(databaseUrl: string) {
-  const inserted = await fetchAndInsertAtsJobs(databaseUrl);
-  console.log(`\nTotal inserted: ${inserted}`);
-  return inserted;
+  const insertedIds = await fetchAndInsertAtsJobs(databaseUrl);
+  console.log(`\nTotal inserted: ${insertedIds.length}`);
+  return insertedIds;
 }

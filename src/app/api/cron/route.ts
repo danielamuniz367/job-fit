@@ -14,8 +14,17 @@ export async function GET(req: Request) {
     return new Response("DATABASE_URL is not configured", { status: 500 });
   }
 
-  const inserted = await fetchAndInsertJobs(db);
-  const { kept, skipped, failed } = await enrichJobs(db);
+  const insertedIds = await fetchAndInsertJobs(db);
+  const { kept, skipped, failed, aiRemoved } = await enrichJobs(
+    db,
+    insertedIds,
+  );
 
-  return NextResponse.json({ inserted, kept, skipped, failed });
+  return NextResponse.json({
+    inserted: insertedIds.length,
+    kept,
+    skipped,
+    failed,
+    aiRemoved,
+  });
 }

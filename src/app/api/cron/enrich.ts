@@ -172,12 +172,14 @@ async function verifyEnrichedJobsWithAI(
   return toRemove.length;
 }
 
-export async function enrichJobs(databaseUrl: string) {
+export async function enrichJobs(databaseUrl: string, jobIds?: string[]) {
   const sql = neon(databaseUrl);
 
-  const jobs = (await sql`
-    SELECT job_id FROM job_listing WHERE enriched = false
-  `) as { job_id: string }[];
+  const jobs = (
+    jobIds && jobIds.length > 0
+      ? await sql`SELECT job_id FROM job_listing WHERE job_id = ANY(${jobIds}) AND enriched = false`
+      : await sql`SELECT job_id FROM job_listing WHERE enriched = false`
+  ) as { job_id: string }[];
 
   let kept = 0;
   let skipped = 0;
