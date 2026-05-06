@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { neon } from "@neondatabase/serverless";
+import OpenAI from "openai";
 
 const NYC_PATTERN = /(new york(,\s*ny)?|new york city|nyc|\bny\b)/i;
 const STACK_PATTERN = /\b(react|js|ts|javascript|typescript)\b/i;
@@ -100,6 +101,77 @@ async function fetchJobText(rawUrl: string): Promise<string> {
   return extractLeverDescription($);
 }
 
+async function verifyEnrichedJobsWithAI(
+  databaseUrl: string,
+  jobIds: string[],
+): Promise<number> {
+  if (jobIds.length === 0) return 0;
+
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) {
+    console.log("⚠ OPENAI_API_KEY not set — skipping AI verification");
+    return 0;
+  }
+
+  const sql = neon(databaseUrl);
+  const jobs = (await sql`
+    SELECT job_id, title, company, description
+    FROM job_listing
+    WHERE job_id = ANY(${jobIds})
+  `) as {
+    job_id: string;
+    title: string;
+    company: string;
+    description: string;
+  }[];
+
+  if (jobs.length === 0) return 0;
+
+  const snapshot = jobs
+    .map(
+      (job, i) =>
+        `[${i}] ${job.title} @ ${job.company}\n${(job.description ?? "").slice(0, 300)}`,
+    )
+    .join("\n\n");
+
+  const client = new OpenAI({ apiKey: openaiKey });
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are a job listing filter. Identify which jobs are NOT based in New York City. " +
+          "A job is NYC-based if its description explicitly lists New York, NY / New York City / NYC as the primary work location. " +
+          "Flag remote-only jobs or jobs in other cities even if they mention NYC in passing.",
+      },
+      {
+        role: "user",
+        content:
+          `Here are ${jobs.length} enriched job listings (index, title, company, excerpt). ` +
+          `Return JSON in this exact shape: {"remove": [<0-based indexes to delete>]}. ` +
+          `If all are legitimately NYC, return {"remove": []}.\n\n${snapshot}`,
+      },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const parsed = JSON.parse(response.choices[0]?.message?.content ?? "{}");
+  const toRemove: number[] = Array.isArray(parsed.remove) ? parsed.remove : [];
+
+  for (const idx of toRemove) {
+    const job = jobs[idx];
+    if (!job) continue;
+    await sql`DELETE FROM job_listing WHERE job_id = ${job.job_id}`;
+    console.log(`✗ AI removed (not NYC): ${job.title} @ ${job.company}`);
+  }
+
+  console.log(
+    `AI verification done: ${toRemove.length} non-NYC job(s) removed, ${jobs.length - toRemove.length} confirmed.`,
+  );
+  return toRemove.length;
+}
+
 export async function enrichJobs(databaseUrl: string) {
   const sql = neon(databaseUrl);
 
@@ -110,6 +182,7 @@ export async function enrichJobs(databaseUrl: string) {
   let kept = 0;
   let skipped = 0;
   let failed = 0;
+  const keptJobIds: string[] = [];
 
   for (const job of jobs) {
     try {
@@ -125,6 +198,7 @@ export async function enrichJobs(databaseUrl: string) {
           WHERE job_id = ${job.job_id}
         `;
         kept++;
+        keptJobIds.push(job.job_id);
         console.log(`✓ kept: ${job.job_id}`);
       } else {
         skipped++;
@@ -149,5 +223,9 @@ export async function enrichJobs(databaseUrl: string) {
   console.log(
     `\nEnrichment done: ${kept} kept, ${skipped} skipped, ${failed} failed`,
   );
-  return { kept, skipped, failed };
+
+  console.log("\nRunning AI verification pass on all enriched jobs...");
+  const aiRemoved = await verifyEnrichedJobsWithAI(databaseUrl, keptJobIds);
+
+  return { kept, skipped, failed, aiRemoved };
 }
