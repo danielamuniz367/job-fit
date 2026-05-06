@@ -101,11 +101,11 @@ async function fetchJobText(rawUrl: string): Promise<string> {
   return extractLeverDescription($);
 }
 
-async function verifyEnrichedJobsWithAI(
+export async function verifyEnrichedJobsWithAI(
   databaseUrl: string,
-  jobIds: string[],
+  jobIds?: string[],
 ): Promise<number> {
-  if (jobIds.length === 0) return 0;
+  if (jobIds !== undefined && jobIds.length === 0) return 0;
 
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
@@ -117,7 +117,7 @@ async function verifyEnrichedJobsWithAI(
   const jobs = (await sql`
     SELECT job_id, title, company, description
     FROM job_listing
-    WHERE job_id = ANY(${jobIds})
+    WHERE ${jobIds ? sql`job_id = ANY(${jobIds})` : sql`enriched = true`}
   `) as {
     job_id: string;
     title: string;
@@ -130,7 +130,7 @@ async function verifyEnrichedJobsWithAI(
   const snapshot = jobs
     .map(
       (job, i) =>
-        `[${i}] ${job.title} @ ${job.company}\n${(job.description ?? "").slice(0, 300)}`,
+        `[${i}] ${job.title} @ ${job.company}\n${(job.description ?? "").slice(0, 600)}`,
     )
     .join("\n\n");
 
@@ -141,9 +141,9 @@ async function verifyEnrichedJobsWithAI(
       {
         role: "system",
         content:
-          "You are a job listing filter. Identify which jobs are NOT based in New York City. " +
-          "A job is NYC-based if its description explicitly lists New York, NY / New York City / NYC as the primary work location. " +
-          "Flag remote-only jobs or jobs in other cities even if they mention NYC in passing.",
+          "You are a job listing filter. Your job is to remove listings that are clearly NOT based in New York City. " +
+          "Keep a job if New York, NY, New York City, or NYC appears anywhere as a work location — even alongside other cities (e.g. 'Austin; New York City' is fine, keep it). " +
+          "Only remove a job if the location contains no mention of New York at all, or if the posting is explicitly remote-only with no NYC office listed.",
       },
       {
         role: "user",
