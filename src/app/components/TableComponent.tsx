@@ -9,8 +9,11 @@ import {
   ColumnDef,
   Header,
   Cell,
+  getPaginationRowModel,
+  PaginationState,
 } from "@tanstack/react-table";
 import JobPanel from "./JobPanel";
+import { useState } from "react";
 
 export type Job = {
   id: number;
@@ -27,13 +30,13 @@ interface TableComponentProps {
 }
 
 const columns: ColumnDef<Job>[] = [
-  {
-    id: "rowNumber",
-    header: "#",
-    cell: (info) =>
-      info.table.getRowModel().rows.findIndex((r) => r.id === info.row.id) + 1,
-    enableSorting: false,
-  },
+  // {
+  //   id: "rowNumber",
+  //   header: "#",
+  //   cell: (info) =>
+  //     info.table.getRowModel().rows.findIndex((r) => r.id === info.row.id) + 1,
+  //   enableSorting: false,
+  // },
   { accessorKey: "title", header: () => "Title", sortingFn: "alphanumeric" },
   {
     accessorKey: "company",
@@ -99,17 +102,24 @@ const CellElement: React.FC<{
 };
 
 const TableComponent: React.FC<TableComponentProps> = ({ data }) => {
-  const [sorting, setSorting] = React.useState<SortingState>([
+  const [sorting, setSorting] = useState<SortingState>([
     { id: "posted_date", desc: true },
   ]);
-  const [selectedJob, setSelectedJob] = React.useState<Job | null>(null);
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  });
+
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const table = useReactTable({
     data,
     columns,
-    state: { sorting },
+    state: { sorting, pagination },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    onPaginationChange: setPagination,
   });
 
   return (
@@ -147,6 +157,70 @@ const TableComponent: React.FC<TableComponentProps> = ({ data }) => {
           ))}
         </tbody>
       </table>
+      <div className="h-2" />
+      <div className="flex items-center justify-center gap-2">
+        <button
+          className="border rounded p-1"
+          onClick={() => table.firstPage()}
+          disabled={!table.getCanPreviousPage()}
+        >
+          {"<<"}
+        </button>
+        <button
+          className="border rounded p-1"
+          onClick={() => table.previousPage()}
+          disabled={!table.getCanPreviousPage()}
+        >
+          {"<"}
+        </button>
+        <button
+          className="border rounded p-1"
+          onClick={() => table.nextPage()}
+          disabled={!table.getCanNextPage()}
+        >
+          {">"}
+        </button>
+        <button
+          className="border rounded p-1"
+          onClick={() => table.lastPage()}
+          disabled={!table.getCanNextPage()}
+        >
+          {">>"}
+        </button>
+        <span className="flex items-center gap-1">
+          <div>Page</div>
+          <strong>
+            {table.getState().pagination.pageIndex + 1} of{" "}
+            {table.getPageCount().toLocaleString()}
+          </strong>
+        </span>
+        <span className="flex items-center gap-1">
+          | Go to page:
+          <input
+            type="number"
+            min="1"
+            max={table.getPageCount()}
+            defaultValue={table.getState().pagination.pageIndex + 1}
+            onChange={(e) => {
+              const page = e.target.value ? Number(e.target.value) - 1 : 0;
+              table.setPageIndex(page);
+            }}
+            className="border p-1 rounded w-16"
+          />
+        </span>
+        <select
+          value={table.getState().pagination.pageSize}
+          onChange={(e) => {
+            table.setPageSize(Number(e.target.value));
+          }}
+        >
+          {[10, 20, 30, 40, 50].map((pageSize) => (
+            <option key={pageSize} value={pageSize}>
+              Show {pageSize}
+            </option>
+          ))}
+        </select>
+      </div>
       <JobPanel job={selectedJob} onClose={() => setSelectedJob(null)} />
     </>
   );
