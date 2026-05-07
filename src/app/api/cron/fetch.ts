@@ -23,7 +23,7 @@ const EXCLUDE_SENIORITY =
   '-"junior" -"jr." -"jr" -"senior" -"sr." -"sr" -"lead" -"staff" -"principal" -"director" -"manager" -"head of" -"vp" -"vice president"';
 
 const ATS_QUERIES = [
-  `site:greenhouse.io OR site:lever.co OR site:ashbyhq.com ("software engineer" OR "full stack") (react OR typescript) "new york" ${EXCLUDE_SENIORITY} ${EXCLUDE_COMPANIES}`,
+  `(site:greenhouse.io OR site:lever.co OR site:ashbyhq.com) "software engineer" (react OR typescript) "new york" ${EXCLUDE_SENIORITY} ${EXCLUDE_COMPANIES}`,
 ] as const;
 
 const ATS_HOSTS = ["greenhouse.io", "lever.co", "ashbyhq.com"];
@@ -69,6 +69,11 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
       const json = await getJsonAsync(params);
       results = json.organic_results ?? [];
 
+      console.log(
+        "RESULTS",
+        results.map((r) => r.link),
+      );
+
       if (results.length === 0) break;
 
       const countBefore = insertedIds.length;
@@ -83,7 +88,6 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
         const snippet: string = result.snippet ?? "";
         const company = extractCompanyFromAtsUrl(link);
         const industry = inferIndustry(snippet, company);
-
         const inserted = await sql`
           INSERT INTO job_listing (
             job_id,
@@ -112,7 +116,6 @@ export async function fetchAndInsertAtsJobs(databaseUrl: string) {
 
       pagesFetched++;
       const insertedThisPage = insertedIds.length - countBefore;
-
       console.log(
         `ATS query "${query.slice(0, 60)}..." | Page ${pagesFetched}: fetched ${results.length}, inserted ${insertedThisPage} new`,
       );
