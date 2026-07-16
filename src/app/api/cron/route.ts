@@ -15,16 +15,13 @@ export async function GET(req: Request) {
   }
 
   const insertedIds = await fetchAndInsertJobs(db);
-  const { kept, skipped, failed, aiRemoved } = await enrichJobs(
-    db,
-    insertedIds,
-  );
+  const { kept, skipped, failed, scored } = await enrichJobs(db, insertedIds);
 
   return NextResponse.json({
     inserted: insertedIds.length,
     kept,
     skipped,
     failed,
-    aiRemoved,
+    scored,
   });
 }

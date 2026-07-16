@@ -19,11 +19,24 @@ function getJsonAsync(params: any): Promise<any> {
 const EXCLUDE_COMPANIES =
   '-"google" -"facebook" -"amazon" -"ibm" -"oracle" -"salesforce" -"uber" -"vmware" -"intuit" -"palantir"';
 
+// Target is mid-level leaning senior, so senior/lead are now ALLOWED.
+// Still exclude junior and the too-senior/management tiers.
 const EXCLUDE_SENIORITY =
-  '-"junior" -"jr." -"jr" -"senior" -"sr." -"sr" -"lead" -"staff" -"principal" -"director" -"manager" -"head of" -"vp" -"vice president"';
+  '-"junior" -"jr." -"jr" -"staff" -"principal" -"director" -"manager" -"head of" -"vp" -"vice president"';
 
+// Frontend-leaning across frontend / full-stack / product-engineer titles,
+// anchored on React or TypeScript.
+const ROLES =
+  '("software engineer" OR "frontend engineer" OR "front end engineer" OR "full stack engineer" OR "product engineer")';
+const STACK = "(react OR typescript)";
+const SITES = "(site:greenhouse.io OR site:lever.co OR site:ashbyhq.com)";
+
+// Two consolidated queries: NYC first (preferred), then remote (allowed, ranks
+// lowest at scoring time). Fit ranking — hybrid > on-site > remote — is applied
+// by the AI scorer, not the crawler.
 const ATS_QUERIES = [
-  `(site:greenhouse.io OR site:lever.co OR site:ashbyhq.com) "software engineer" (react OR typescript) "new york" ${EXCLUDE_SENIORITY} ${EXCLUDE_COMPANIES}`,
+  `${SITES} ${ROLES} ${STACK} "new york" ${EXCLUDE_SENIORITY} ${EXCLUDE_COMPANIES}`,
+  `${SITES} ${ROLES} ${STACK} "remote" ${EXCLUDE_SENIORITY} ${EXCLUDE_COMPANIES}`,
 ] as const;
 
 const ATS_HOSTS = ["greenhouse.io", "lever.co", "ashbyhq.com"];

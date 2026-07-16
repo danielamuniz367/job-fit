@@ -1,5 +1,5 @@
 import * as dotenv from "dotenv";
-import { verifyEnrichedJobsWithAI } from "../src/app/api/cron/enrich";
+import { scoreEnrichedJobs } from "../src/app/api/cron/enrich";
 
 type DatabaseTarget = "dev" | "prod";
 
@@ -36,8 +36,10 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl)
   throw new Error(`DATABASE_URL is not set in ${ENV_FILES[databaseTarget]}`);
 
-if (!process.env.OPENAI_API_KEY)
-  throw new Error(`OPENAI_API_KEY is not set in ${ENV_FILES[databaseTarget]}`);
+if (!process.env.ANTHROPIC_API_KEY)
+  throw new Error(
+    `ANTHROPIC_API_KEY is not set in ${ENV_FILES[databaseTarget]}`,
+  );
 
-// No jobIds passed — verifies all enriched=true rows in the target DB
-verifyEnrichedJobsWithAI(databaseUrl);
+// No jobIds passed — re-scores all enriched=true rows in the target DB
+scoreEnrichedJobs(databaseUrl);

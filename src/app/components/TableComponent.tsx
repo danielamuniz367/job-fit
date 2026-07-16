@@ -14,44 +14,46 @@ import {
 } from "@tanstack/react-table";
 import JobPanel from "./JobPanel";
 import { useState } from "react";
-
-export type Job = {
-  id: number;
-  title: string;
-  status: string;
-  company: string;
-  industry: string;
-  posted_date: string;
-  source_link: string;
-};
+import type { Job } from "@/lib/jobs";
+import { STRENGTH_STYLES, locationLabel } from "@/lib/display";
 
 interface TableComponentProps {
   data: Job[];
 }
 
 const columns: ColumnDef<Job>[] = [
-  // {
-  //   id: "rowNumber",
-  //   header: "#",
-  //   cell: (info) =>
-  //     info.table.getRowModel().rows.findIndex((r) => r.id === info.row.id) + 1,
-  //   enableSorting: false,
-  // },
   { accessorKey: "title", header: () => "Title", sortingFn: "alphanumeric" },
   {
     accessorKey: "company",
     header: () => "Company",
     sortingFn: "alphanumeric",
   },
-  { accessorKey: "status", header: () => "Status", sortingFn: "alphanumeric" },
   {
-    accessorKey: "industry",
-    header: () => "Industry",
+    accessorKey: "fit_score",
+    header: () => "Fit",
+    sortingFn: "basic",
+    cell: (info) => {
+      const job = info.row.original;
+      if (!job.fit_strength) return "—";
+      const s = STRENGTH_STYLES[job.fit_strength];
+      return (
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${s.badge}`}
+        >
+          {job.fit_score ?? "?"}
+        </span>
+      );
+    },
+  },
+  {
+    accessorKey: "location_type",
+    header: () => "Location",
     sortingFn: "alphanumeric",
+    cell: (info) => locationLabel(info.row.original.location_type) ?? "—",
   },
   {
     accessorKey: "posted_date",
-    header: () => "Posted Date",
+    header: () => "Posted",
     sortingFn: "alphanumeric",
   },
 ];
@@ -91,7 +93,7 @@ const CellElement: React.FC<{
         href={cell.row.original.source_link}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-blue-600 hover:underline"
+        className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
         onClick={(e) => e.stopPropagation()}
       >
         {String(cell.getValue())}
@@ -103,7 +105,7 @@ const CellElement: React.FC<{
 
 const TableComponent: React.FC<TableComponentProps> = ({ data }) => {
   const [sorting, setSorting] = useState<SortingState>([
-    { id: "posted_date", desc: true },
+    { id: "fit_score", desc: true },
   ]);
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
@@ -124,39 +126,44 @@ const TableComponent: React.FC<TableComponentProps> = ({ data }) => {
 
   return (
     <>
-      <table className="mx-auto">
-        <thead>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <th key={header.id}>
-                  <HeaderElement header={header}>
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext(),
-                    )}
-                  </HeaderElement>
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr
-              key={row.id}
-              className="cursor-pointer hover:bg-gray-50"
-              onClick={() => setSelectedJob(row.original)}
-            >
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id}>
-                  <CellElement cell={cell} />
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <table className="w-full text-sm">
+          <thead className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className="px-4 py-3 text-left font-medium text-zinc-500"
+                  >
+                    <HeaderElement header={header}>
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                    </HeaderElement>
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.map((row) => (
+              <tr
+                key={row.id}
+                className="cursor-pointer border-b border-zinc-100 dark:border-zinc-800/60 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/60"
+                onClick={() => setSelectedJob(row.original)}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className="px-4 py-3 align-middle">
+                    <CellElement cell={cell} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="h-2" />
       <div className="flex items-center justify-center gap-2">
         <button

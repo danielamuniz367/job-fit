@@ -1,4 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+JobFit is a personal, ADHD-friendly job search app. Instead of a wall of listings,
+it surfaces a **focused few strongly-aligned jobs per day**, explains **why each
+fits**, and generates a **resume tailored** to each role — asking for a little extra
+context to strengthen it.
+
+## How it works
+
+- **Profile** (`src/lib/profile.ts`) — the single source of truth for "what I'm
+  looking for" (seniority, frontend-leaning stack, NYC-first location ranking). Drives
+  both the crawler query and the AI fit scoring. A settings UI can later override it
+  via the `profile.preferences` column.
+- **Pipeline** (`src/app/api/cron/*`) — daily cron: SerpAPI searches ATS boards →
+  enrich (scrape descriptions, keep NYC-or-remote + React/TS) → AI fit scoring
+  (heuristic fallback when no key).
+- **Daily focus** (`/`) — the top-scoring unseen jobs, stamped as today's fixed set.
+- **Resume tailoring** (`src/lib/ai.ts`, `/resumes`) — one base resume, tailored per
+  job with a context Q&A loop.
+
+## Setup
+
+Environment variables (`.env.development.local` for dev, Vercel env for prod):
+
+- `DATABASE_URL` — Neon Postgres
+- `SERPAPI_KEY` — job crawling
+- `ANTHROPIC_API_KEY` — **required** for AI fit scoring, resume tailoring, and
+  context questions (Claude `claude-opus-4-8`). Without it, these features degrade
+  gracefully (heuristic scores, no drafts).
+- `CRON_SECRET` — bearer token guarding `/api/cron`
+
+Run the DB migration once (adds fit/lifecycle columns + `profile` / `tailored_resume`
+tables):
+
+```bash
+npx tsx scripts/migrate.ts dev     # or: prod --confirm-prod
+```
+
+Pipeline scripts: `scripts/fetch-jobs.ts`, `scripts/enrich-jobs.ts`,
+`scripts/verify-jobs.ts` (re-scores enriched jobs).
 
 ## Getting Started
 

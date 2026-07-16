@@ -1,8 +1,11 @@
 import * as cheerio from "cheerio";
 import { neon } from "@neondatabase/serverless";
-import OpenAI from "openai";
+import { scoreJobFit } from "@/lib/ai";
+import type { LocationType } from "@/lib/profile";
 
 const NYC_PATTERN = /(new york(,\s*ny)?|new york city|nyc|\bny\b)/i;
+const REMOTE_PATTERN = /\bremote\b/i;
+const HYBRID_PATTERN = /\bhybrid\b/i;
 const STACK_PATTERN = /\b(react|js|ts|javascript|typescript)\b/i;
 
 class JobNotFoundError extends Error {}
@@ -101,15 +104,86 @@ async function fetchJobText(rawUrl: string): Promise<string> {
   return extractLeverDescription($);
 }
 
-export async function verifyEnrichedJobsWithAI(
+// Rough classification from the description text. The AI scorer refines this;
+// this is the fallback when no API key is configured.
+function classifyLocation(description: string): LocationType | null {
+  const hasNyc = NYC_PATTERN.test(description);
+  const hasRemote = REMOTE_PATTERN.test(description);
+  const hasHybrid = HYBRID_PATTERN.test(description);
+  if (hasNyc && hasHybrid) return "nyc-hybrid";
+  if (hasNyc) return "nyc-onsite";
+  if (hasRemote) return "remote";
+  return null;
+}
+
+const ROLE_FOCUS_PATTERN =
+  /\b(frontend|front[-\s]?end|full[-\s]?stack|product engineer)\b/i;
+const SENIOR_PATTERN = /\b(senior|sr\.?|lead)\b/i;
+const LOCATION_POINTS: Record<LocationType, number> = {
+  "nyc-hybrid": 20,
+  "nyc-onsite": 14,
+  remote: 8,
+};
+
+type HeuristicFit = {
+  score: number;
+  strength: "strong" | "good" | "stretch";
+  summary: string;
+};
+
+// A keyword-based fit estimate used when no API key is configured, and as the
+// initial value the AI scorer later overrides. Keeps the daily focus view
+// meaningful without any external calls.
+function heuristicFit(
+  title: string,
+  description: string,
+  locationType: LocationType | null,
+): HeuristicFit {
+  const text = `${title} ${description}`;
+  let score = 30;
+  const reasons: string[] = [];
+
+  if (/\breact\b/i.test(text)) {
+    score += 22;
+    reasons.push("uses React");
+  }
+  if (/\b(typescript|\bts\b)\b/i.test(text)) {
+    score += 12;
+    reasons.push("TypeScript in the stack");
+  }
+  if (ROLE_FOCUS_PATTERN.test(text)) {
+    score += 14;
+    reasons.push("frontend-leaning role");
+  }
+  if (SENIOR_PATTERN.test(text)) score += 6;
+  if (locationType) {
+    score += LOCATION_POINTS[locationType];
+    reasons.push(
+      locationType === "remote" ? "remote" : locationType.replace("-", " "),
+    );
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  const strength = score >= 75 ? "strong" : score >= 50 ? "good" : "stretch";
+  const summary = reasons.length
+    ? `Matches on ${reasons.join(", ")}.`
+    : "Partial match to your target profile.";
+  return { score, strength, summary };
+}
+
+/**
+ * Score already-enriched jobs against the target profile and persist the result
+ * (fit_score / fit_strength / fit_summary, and location_type when the scorer
+ * resolves it). Non-destructive — low-fit jobs simply never reach the daily
+ * focus view rather than being deleted. No-ops without an API key.
+ */
+export async function scoreEnrichedJobs(
   databaseUrl: string,
   jobIds?: string[],
 ): Promise<number> {
   if (jobIds !== undefined && jobIds.length === 0) return 0;
-
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) {
-    console.log("⚠ OPENAI_API_KEY not set — skipping AI verification");
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log("⚠ ANTHROPIC_API_KEY not set — skipping AI fit scoring");
     return 0;
   }
 
@@ -121,55 +195,36 @@ export async function verifyEnrichedJobsWithAI(
   `) as {
     job_id: string;
     title: string;
-    company: string;
-    description: string;
+    company: string | null;
+    description: string | null;
   }[];
 
-  if (jobs.length === 0) return 0;
-
-  const snapshot = jobs
-    .map(
-      (job, i) =>
-        `[${i}] ${job.title} @ ${job.company}\n${(job.description ?? "").slice(0, 600)}`,
-    )
-    .join("\n\n");
-
-  const client = new OpenAI({ apiKey: openaiKey });
-  const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are a job listing filter. Your job is to remove listings that are clearly NOT based in New York City. " +
-          "Keep a job if New York, NY, New York City, or NYC appears anywhere as a work location — even alongside other cities (e.g. 'Austin; New York City' is fine, keep it). " +
-          "Only remove a job if the location contains no mention of New York at all, or if the posting is explicitly remote-only with no NYC office listed.",
-      },
-      {
-        role: "user",
-        content:
-          `Here are ${jobs.length} enriched job listings (index, title, company, excerpt). ` +
-          `Return JSON in this exact shape: {"remove": [<0-based indexes to delete>]}. ` +
-          `If all are legitimately NYC, return {"remove": []}.\n\n${snapshot}`,
-      },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-  const parsed = JSON.parse(response.choices[0]?.message?.content ?? "{}");
-  const toRemove: number[] = Array.isArray(parsed.remove) ? parsed.remove : [];
-
-  for (const idx of toRemove) {
-    const job = jobs[idx];
-    if (!job) continue;
-    await sql`DELETE FROM job_listing WHERE job_id = ${job.job_id}`;
-    console.log(`✗ AI removed (not NYC): ${job.title} @ ${job.company}`);
+  let scored = 0;
+  for (const job of jobs) {
+    try {
+      const fit = await scoreJobFit(job);
+      if (!fit) continue;
+      const locationType =
+        fit.locationType ?? classifyLocation(job.description ?? "");
+      await sql`
+        UPDATE job_listing
+        SET fit_score = ${fit.score},
+            fit_strength = ${fit.strength},
+            fit_summary = ${fit.summary},
+            location_type = ${locationType}
+        WHERE job_id = ${job.job_id}
+      `;
+      scored++;
+      console.log(
+        `★ scored ${fit.score} (${fit.strength}): ${job.title} @ ${job.company}`,
+      );
+    } catch (err) {
+      console.error(`✗ failed to score ${job.job_id}:`, err);
+    }
   }
 
-  console.log(
-    `AI verification done: ${toRemove.length} non-NYC job(s) removed, ${jobs.length - toRemove.length} confirmed.`,
-  );
-  return toRemove.length;
+  console.log(`Fit scoring done: ${scored} job(s) scored.`);
+  return scored;
 }
 
 export async function enrichJobs(databaseUrl: string, jobIds?: string[]) {
@@ -180,7 +235,7 @@ export async function enrichJobs(databaseUrl: string, jobIds?: string[]) {
   // When called from the CLI (no jobIds), process all unenriched rows.
   if (jobIds !== undefined && jobIds.length === 0) {
     console.log("No new jobs to enrich.");
-    return { kept: 0, skipped: 0, failed: 0, aiRemoved: 0 };
+    return { kept: 0, skipped: 0, failed: 0, scored: 0 };
   }
 
   const jobs = (
@@ -198,22 +253,32 @@ export async function enrichJobs(databaseUrl: string, jobIds?: string[]) {
     try {
       const description = await fetchJobText(job.job_id);
 
-      const hasNyc = NYC_PATTERN.test(description);
+      // Location is now a ranking, not a hard filter: keep NYC *or* remote
+      // roles (as long as the stack matches). The scorer ranks them later.
+      const hasLocation =
+        NYC_PATTERN.test(description) || REMOTE_PATTERN.test(description);
       const hasStack = STACK_PATTERN.test(description);
 
-      if (hasNyc && hasStack) {
+      if (hasLocation && hasStack) {
+        const locationType = classifyLocation(description);
+        const fit = heuristicFit("", description, locationType);
         await sql`
           UPDATE job_listing
-          SET enriched = true, description = ${description}
+          SET enriched = true,
+              description = ${description},
+              location_type = ${locationType},
+              fit_score = ${fit.score},
+              fit_strength = ${fit.strength},
+              fit_summary = ${fit.summary}
           WHERE job_id = ${job.job_id}
         `;
         kept++;
         keptJobIds.push(job.job_id);
-        console.log(`✓ kept: ${job.job_id}`);
+        console.log(`✓ kept (${locationType ?? "?"}): ${job.job_id}`);
       } else {
         skipped++;
         console.log(
-          `⚠ skipped (nyc=${hasNyc}, stack=${hasStack}): ${job.job_id}`,
+          `⚠ skipped (location=${hasLocation}, stack=${hasStack}): ${job.job_id}`,
         );
       }
 
@@ -234,8 +299,8 @@ export async function enrichJobs(databaseUrl: string, jobIds?: string[]) {
     `\nEnrichment done: ${kept} kept, ${skipped} skipped, ${failed} failed`,
   );
 
-  console.log("\nRunning AI verification pass on all enriched jobs...");
-  const aiRemoved = await verifyEnrichedJobsWithAI(databaseUrl, keptJobIds);
+  console.log("\nScoring newly enriched jobs against target profile...");
+  const scored = await scoreEnrichedJobs(databaseUrl, keptJobIds);
 
-  return { kept, skipped, failed, aiRemoved };
+  return { kept, skipped, failed, scored };
 }

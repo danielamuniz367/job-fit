@@ -1,15 +1,17 @@
-import TableServerWrapper from "./components/TableServerWrapper";
-import TableComponent, { Job } from "./components/TableComponent";
+import type { Metadata } from "next";
+import { getTodaysFocus } from "@/lib/jobs";
+import DailyFocus from "./components/DailyFocus";
+
+export const metadata: Metadata = {
+  title: "Today | JobFit",
+};
+
+// Personalized, live data (and stamps today's picks) — never prerender.
+export const dynamic = "force-dynamic";
 
 const HomePage = async () => {
-  return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold text-zinc-900">Jobs</h1>
-      <TableServerWrapper>
-        {({ data }) => <TableComponent data={data as Job[]} />}
-      </TableServerWrapper>
-    </div>
-  );
+  const focus = await getTodaysFocus();
+  return <DailyFocus focus={focus} />;
 };
 
 export default HomePage;
